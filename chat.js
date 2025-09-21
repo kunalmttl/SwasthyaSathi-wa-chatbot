@@ -32,7 +32,7 @@ export async function processChatMessage(rawMessage)
   try 
   {
     const userLang = user.native_language; // e.g., 'hin_Deva'
-    const englishLang = 'eng_Latn';
+    const englishLang = 'en';
 
     // --- Step 1: Translate User's Message to English ---
     const englishMessage = await translateText(userMessage, userLang, englishLang);

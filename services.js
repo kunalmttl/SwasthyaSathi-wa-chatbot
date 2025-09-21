@@ -4,17 +4,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
-/**
- * A mapping from the IndicTrans2 codes (stored in Supabase)
- * to the simple ISO 639-1 codes that Google Translate uses.
- */
-const GOOGLE_LANG_CODE_MAP = {
-  'hin_Deva': 'hi',
-  'eng_Latn': 'en',
-  'ory_Orya': 'or',
-  'ben_Beng': 'bn'
-  // Add any other languages you support here
-};
+
 
 /**
  * Translates text using the Google Translate API.
@@ -30,16 +20,11 @@ export async function translateText(text, sourceLang, targetLang) {
     return text;
   }
 
-  // Convert our internal codes to Google's codes
-  const fromLang = GOOGLE_LANG_CODE_MAP[sourceLang] || 'auto'; // Default to auto-detect
-  const toLang = GOOGLE_LANG_CODE_MAP[targetLang];
+  const fromLang = sourceLang;
+  const toLang = targetLang;
 
-  if (!toLang) {
-    console.error(`Google Translate code not found for: ${targetLang}`);
-    return text; // Return original text if target language is not mapped
-  }
-
-  try {
+  try 
+  {
     console.log(`Translating from ${fromLang} to ${toLang} using Google Translate...`);
     
     const result = await translate(text, { from: fromLang, to: toLang });
@@ -47,12 +32,15 @@ export async function translateText(text, sourceLang, targetLang) {
     console.log(`Translation successful: "${result.text}"`);
     return result.text;
 
-  } catch (error) {
+  } 
+  catch (error) 
+  {
     console.error('Google Translate error:', error);
     // On error, return the original text to prevent the app from crashing
     return text;
   }
 }
+
 
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 

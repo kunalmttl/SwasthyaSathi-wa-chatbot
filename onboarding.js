@@ -52,8 +52,45 @@ export async function sendStartButtons(to) {
   } catch (e) { console.error('sendStartButtons error', e?.response?.data || e.message) }
 }
 
-// Send languages as list (Example)
-export async function sendLanguageList(to) 
+export async function sendLanguageListPage1(to) 
+{
+  const payload = 
+  {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'Language Preference (1/3)' },
+      body: { text: 'Choose your preferred language' },
+      action: {
+        button: 'Choose Language',
+        sections: [{
+          title: 'Languages',
+          rows: [
+            { id: 'as', title: 'অসমীয়া (Assamese)' },
+            { id: 'ml', title: 'മലയാളം (Malayalam)' },
+            { id: 'doi', title: 'डोगरी (Dogri)' },
+            { id: 'mai', title: 'मैथिली (Maithili)' },
+            { id: 'kn', title: 'ಕನ್ನಡ (Kannada)' },
+            { id: 'sd', title: 'सिन्धी (Sindhi)' },
+            { id: 'ks', title: 'कश्मीरी (Kashmiri)' },
+            { id: 'bn', title: 'বাংলা (Bengali)' },
+            { id: 'te', title: 'తెలుగు (Telugu)' },
+            // This ID will trigger the next page
+            { id: 'lang_page_2', title: '➡️ More Languages' }
+          ]
+        }]
+      }
+    }
+  };
+  try {
+    return await axios.post(GRAPH_BASE, payload, { headers: headers() });
+  } catch (e) { console.error('sendLanguageListPage1 error', e?.response?.data || e.message); }
+}
+
+// --- PAGE 2 ---
+export async function sendLanguageListPage2(to) 
 {
   const payload = {
     messaging_product: 'whatsapp',
@@ -61,27 +98,62 @@ export async function sendLanguageList(to)
     type: 'interactive',
     interactive: {
       type: 'list',
-      header: { type: 'text', text: 'Language Preference' },
-      body: { text: 'Choose your preferred conversation language' },
+      header: { type: 'text', text: 'Language Preference (2/3)' },
+      body: { text: 'Choose your preferred language' },
       action: {
         button: 'Choose Language',
-        sections: [
-          {
-            title: 'Languages',
-            rows: [
-              { id: 'hin_Deva', title: 'हिन्दी' },
-              { id: 'eng_Latn', title: 'English' },
-              { id: 'ory_Orya', title: 'Odia' },
-              { id: 'ben_Beng', title: 'Bengali' }
-            ]
-          }
-        ]
+        sections: [{
+          title: 'Languages',
+          rows: [
+            { id: 'sat', title: 'संताली (Santali)' },
+            { id: 'brx', title: 'बोड़ो (Bodo)' },
+            { id: 'ta', title: 'தமிழ் (Tamil)' },
+            { id: 'en', title: 'English' },
+            { id: 'sa', title: 'संस्कृतम् (Sanskrit)' },
+            { id: 'or', title: 'ଓଡ଼ିଆ (Odia)' },
+            { id: 'gu', title: 'ગુજરાતી (Gujarati)' },
+            { id: 'hi', title: 'हिन्दी (Hindi)' },
+            { id: 'mni', title: 'মৈতৈ (Manipuri)' },
+            { id: 'lang_page_3', title: '➡️ More Languages' }
+          ]
+        }]
       }
     }
-  }
+  };
   try {
-    return await axios.post(GRAPH_BASE, payload, { headers: headers() })
-  } catch (e) { console.error('sendLanguageList error', e?.response?.data || e.message) }
+    return await axios.post(GRAPH_BASE, payload, { headers: headers() });
+  } catch (e) { console.error('sendLanguageListPage2 error', e?.response?.data || e.message); }
+}
+
+// --- PAGE 3 ---
+export async function sendLanguageListPage3(to) {
+    // Final page, so we don't need a "More" button
+    const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+            type: 'list',
+            header: { type: 'text', text: 'Language Preference (3/3)' },
+            body: { text: 'Choose your preferred language' },
+            action: {
+                button: 'Choose Language',
+                sections: [{
+                  title: 'Languages',
+                  rows: [
+                    { id: 'gom', title: 'कोंकणी (Konkani)' },
+                    { id: 'ne', title: 'नेपाली (Nepali)' },
+                    { id: 'mr', title: 'मराठी (Marathi)' },
+                    { id: 'pa', title: 'ਪੰਜਾਬੀ (Punjabi)' },
+                    { id: 'ur', title: 'اردو (Urdu)' }
+                    ]
+                  }]
+            }
+        }
+    };
+    try {
+        return await axios.post(GRAPH_BASE, payload, { headers: headers() });
+    } catch (e) { console.error('sendLanguageListPage3 error', e?.response?.data || e.message); }
 }
 
 // Send gender buttons
@@ -182,49 +254,79 @@ export async function processOnboardingMessage(rawMessage) {
 async function handleButtonReply(user, from, btnId, rawMessage) {
   switch (btnId) {
     case 'start_setup':
-      await updateUserByPhone(from, { onboarding_step: 'language' })
-      await sendLanguageList(from)
-      break
+      // This is the entry point for the onboarding flow.
+      await updateUserByPhone(from, { onboarding_step: 'language' });
+      
+      // CORRECTED LINE: The function name now matches the one we defined.
+      await sendLanguageListPage1(from); 
+      break;
+
     case 'ask_question':
-      await updateUserByPhone(from, { onboarding_step: 'done', verified: true })
-      await sendText(from, 'You can ask your health question now. (Tip: include symptoms & duration)')
-      break
+      // This allows the user to skip the detailed setup.
+      await updateUserByPhone(from, { onboarding_step: 'done', verified: true });
+      await sendText(from, 'You can ask your health question now. (Tip: include symptoms & duration)');
+      break;
+
     case 'later':
-      await updateUserByPhone(from, { onboarding_step: null })
-      await sendText(from, 'No problem. Message anytime to get started.')
-      break
+      // User chooses to postpone onboarding.
+      await updateUserByPhone(from, { onboarding_step: null });
+      await sendText(from, 'No problem. Message anytime to get started.');
+      break;
+
     case 'gender_m':
     case 'gender_f':
     case 'gender_o': {
-      const gender = btnId === 'gender_m' ? 'Male' : (btnId === 'gender_f' ? 'Female' : 'Other')
-      await updateUserByPhone(from, { gender, onboarding_step: 'location' })
-      await sendText(from, 'Please tell your city and state (e.g., Bhubaneswar, Odisha) or send PIN code.')
-      break
+      // Handles the gender selection and moves to the next step.
+      const gender = btnId === 'gender_m' ? 'Male' : (btnId === 'gender_f' ? 'Female' : 'Other');
+      await updateUserByPhone(from, { gender, onboarding_step: 'location' });
+      await sendText(from, 'Please tell your city and state (e.g., Bhubaneswar, Odisha) or send your 6-digit PIN code.');
+      break;
     }
+
     case 'consent_yes':
-      await updateUserByPhone(from, { consent: true, onboarding_step: 'done', verified: true })
-      await sendText(from, 'Thank you — setup complete. You can ask health questions anytime.')
-      break
+      // User agrees to the terms, completing the setup.
+      await updateUserByPhone(from, { consent: true, onboarding_step: 'done', verified: true });
+      await sendText(from, 'Thank you — setup complete. You can ask health questions anytime.');
+      break;
+
     case 'consent_no':
-      await updateUserByPhone(from, { consent: false, onboarding_step: 'done', verified: false })
-      await sendText(from, 'Understood. Profile not saved. You may still ask general questions.')
-      break
+      // User does not agree. Onboarding is marked as 'done' but 'verified' is false.
+      await updateUserByPhone(from, { consent: false, onboarding_step: 'done', verified: false });
+      await sendText(from, 'Understood. Your personal data will not be saved. You may still ask general questions.');
+      break;
+
     default:
-      await sendText(from, 'Option received. Proceeding...')
+      // A fallback for any unexpected button IDs.
+      await sendText(from, 'Option received. Proceeding...');
+      break;
   }
 }
 
+
 // List handler (language selection)
-async function handleListReply(user, from, listId) 
-{
-  if (listId.startsWith('lang_')) {
-    const lang = listId;
-    await updateUserByPhone(from, { native_language: lang, onboarding_step: 'name' })
-    await sendText(from, 'Great — what is your full name?')
+async function handleListReply(user, from, listId) {
+  // Check if the user is at the language selection step
+  if (user.onboarding_step === 'language') {
+    // Handle pagination
+    if (listId === 'lang_page_2') {
+      await sendLanguageListPage2(from);
+      return; // Stop further execution
+    }
+    if (listId === 'lang_page_3') {
+      await sendLanguageListPage3(from);
+      return; // Stop further execution
+    }
+
+    // If it's not a page change, it's a language selection
+    await updateUserByPhone(from, { native_language: listId, onboarding_step: 'name' });
+    await sendText(from, 'Great — what is your full name?');
+
   } else {
-    await sendText(from, 'Selection received.')
+    // Fallback for other potential lists
+    await sendText(from, 'Selection received.');
   }
 }
+
 
 // Text reply handler (for steps that expect typed input)
 async function handleTextReply(user, from, text) {
