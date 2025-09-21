@@ -2,6 +2,7 @@
 import axios from 'axios'
 import { getUserByPhone, createUserForOnboarding, updateUserByPhone, saveChatLog } from './db.js'
 import { processChatMessage } from './chat.js';
+import { getAddressFromCoords } from './services.js';
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID
@@ -156,9 +157,44 @@ export async function sendLanguageListPage3(to) {
     } catch (e) { console.error('sendLanguageListPage3 error', e?.response?.data || e.message); }
 }
 
+
+export async function sendLocationRequest(to) 
+{
+  const payload = 
+  {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: 
+    {
+      type: 'location_request_message',
+      body: 
+      {
+        text: 'To find nearby vaccination drives, please share your current location.\n\nTap the button below to send your location.'
+      },
+      action: 
+      {
+        name: 'send_location'
+      }
+    }
+  };
+  try 
+  {
+    return await axios.post(GRAPH_BASE, payload, { headers: headers() });
+  } 
+  catch (e) 
+  {
+    console.error('sendLocationRequest error', e?.response?.data || e.message);
+  }
+}
+
+
+
 // Send gender buttons
-export async function sendGenderButtons(to) {
-  const payload = {
+export async function sendGenderButtons(to) 
+{
+  const payload = 
+  {
     messaging_product: 'whatsapp',
     to,
     type: 'interactive',
@@ -204,7 +240,8 @@ export async function sendConsentButtons(to) {
 }
 
 // Main processing function called by webhook
-export async function processOnboardingMessage(rawMessage) {
+export async function processOnboardingMessage(rawMessage) 
+{
   // rawMessage is the full message object from webhook for the single message
   // Extract phone and determine message type
   const from = rawMessage.from
@@ -239,16 +276,69 @@ export async function processOnboardingMessage(rawMessage) {
         // fallback
         await sendText(from, "Got it — please type or choose an option.")
       }
-    } else if (msgType === 'text') {
+    } 
+    else if (msgType === 'text') 
+      {
       const text = rawMessage.text?.body?.trim()
       await handleTextReply(user, from, text)
-    } else {
+      } 
+    else if (msgType === 'location') { // <-- ADD THIS NEW BLOCK
+      // Handle the incoming location message
+      const location = rawMessage.location;
+      const latitude = location.latitude;
+      const longitude = location.longitude;
+      await handleLocationReply(user, from, latitude, longitude);
+    }
+    else 
+    {
       await sendText(from, "Message type not supported for onboarding. Please reply with text.")
     }
   } catch (err) {
     console.error('processOnboardingMessage error', err)
   }
 }
+
+
+
+async function handleLocationReply(user, from, latitude, longitude) 
+{
+  if (user.onboarding_step === 'location') 
+  {
+    console.log(`Received location from ${from}: Lat=${latitude}, Long=${longitude}`);
+
+    // Reverse geocode to get full address details
+    const locationDetails = await getAddressFromCoords(latitude, longitude);
+
+    // Base updates (always save coords and move to next step)
+    const updates = {
+      latitude: latitude,
+      longitude: longitude,
+      onboarding_step: 'conditions' // Move to the next step
+    };
+
+    // If reverse geocoding succeeded, include structured address fields
+    if (locationDetails) {
+      updates.pincode = locationDetails.pincode || null;
+      updates.district = locationDetails.district || null;
+      updates.subdistrict = locationDetails.subdistrict || null;
+      updates.city = locationDetails.city || null;
+      updates.state = locationDetails.state || null;
+    }
+
+    // Save to DB (or your persistence layer)
+    await updateUserByPhone(from, updates);
+
+    // Ask next onboarding question
+    await sendText(
+      from,
+      'Thank you. Any chronic conditions? (e.g., Diabetes, Hypertension). Reply "None" if none.'
+    );
+
+  } else {
+    await sendText(from, "Received your location!");
+  }
+}
+
 
 // Button handler
 async function handleButtonReply(user, from, btnId, rawMessage) {
@@ -279,7 +369,7 @@ async function handleButtonReply(user, from, btnId, rawMessage) {
       // Handles the gender selection and moves to the next step.
       const gender = btnId === 'gender_m' ? 'Male' : (btnId === 'gender_f' ? 'Female' : 'Other');
       await updateUserByPhone(from, { gender, onboarding_step: 'location' });
-      await sendText(from, 'Please tell your city and state (e.g., Bhubaneswar, Odisha) or send your 6-digit PIN code.');
+      await sendLocationRequest(from);
       break;
     }
 

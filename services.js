@@ -112,3 +112,45 @@ You MUST end your entire response with the following disclaimer, exactly as writ
     return "I'm sorry, I am unable to process your medical query at this moment. Please try again later or consult a doctor directly if your condition is serious.";
   }
 }
+
+
+
+/**
+ * Converts latitude and longitude into an address using the OpenCage API.
+ * @param {number} latitude The latitude.
+ * @param {number} longitude The longitude.
+ * @returns {Promise<object|null>} An object with address components (pincode, district, etc.) or null.
+ */
+export async function getAddressFromCoords(latitude, longitude) 
+{
+  const API_KEY = process.env.OPENCAGEDATA_API;
+  const API_URL = `https://api.opencagedata.com/geocode/v1/json?q=${latitude}+${longitude}&key=${API_KEY}`;
+
+  try {
+    console.log(`Fetching address for ${latitude}, ${longitude} using OpenCage...`);
+
+    const response = await axios.get(API_URL);
+    const result = response.data.results[0]; // first match is usually best
+
+    if (!result) return null;
+
+    const components = result.components;
+
+    const addressDetails = {
+      pincode: components.postcode || null,
+      district: components.county || components.state_district || null,
+      subdistrict: components.suburb || components.city_district || null,
+      city: components.city || components.town || components.village || null,
+      state: components.state || null,
+      country: components.country || null,
+      full_address: result.formatted || null
+    };
+
+    console.log("OpenCage reverse geocoding successful:", addressDetails);
+    return addressDetails;
+
+  } catch (error) {
+    console.error('OpenCage reverse geocoding error:', error.response?.data || error.message);
+    return null;
+  }
+}
