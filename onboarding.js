@@ -1,6 +1,7 @@
 // onboarding.js
 import axios from 'axios'
 import { getUserByPhone, createUserForOnboarding, updateUserByPhone, saveChatLog } from './db.js'
+import { processChatMessage } from './chat.js';
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID
@@ -52,7 +53,8 @@ export async function sendStartButtons(to) {
 }
 
 // Send languages as list (Example)
-export async function sendLanguageList(to) {
+export async function sendLanguageList(to) 
+{
   const payload = {
     messaging_product: 'whatsapp',
     to,
@@ -67,10 +69,10 @@ export async function sendLanguageList(to) {
           {
             title: 'Languages',
             rows: [
-              { id: 'lang_hi', title: 'हिन्दी' },
-              { id: 'lang_en', title: 'English' },
-              { id: 'lang_or', title: 'Odia' },
-              { id: 'lang_bn', title: 'Bengali' }
+              { id: 'hin_Deva', title: 'हिन्दी' },
+              { id: 'eng_Latn', title: 'English' },
+              { id: 'ory_Orya', title: 'Odia' },
+              { id: 'ben_Beng', title: 'Bengali' }
             ]
           }
         ]
@@ -143,10 +145,10 @@ export async function processOnboardingMessage(rawMessage) {
     return
   }
 
-  // If user exists but onboarding done -> nothing here
+  // If user exists and onboarding is complete, hand off to the chat processor
   if (user.onboarding_step === 'done' || user.verified) {
     // you can forward to normal chat handler
-    await sendText(from, `Hi ${user.full_name ?? 'there'}, how can I help you today?`)
+    await processChatMessage(rawMessage);
     return
   }
 
@@ -213,9 +215,10 @@ async function handleButtonReply(user, from, btnId, rawMessage) {
 }
 
 // List handler (language selection)
-async function handleListReply(user, from, listId) {
+async function handleListReply(user, from, listId) 
+{
   if (listId.startsWith('lang_')) {
-    const lang = listId.split('_')[1] // e.g., 'hi' or 'en' or 'or'
+    const lang = listId;
     await updateUserByPhone(from, { native_language: lang, onboarding_step: 'name' })
     await sendText(from, 'Great — what is your full name?')
   } else {
