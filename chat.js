@@ -1,6 +1,6 @@
 // chat.js
-import { getUserByPhone } from './db.js';
-import { translateText } from './services.js';
+import { getUserByPhone, saveChatLog } from './db.js';
+import { translateText, getPerplexityAnalysis } from './services.js';
 import { sendText } from './onboarding.js'; // Reusing the generic text sender
 
 
@@ -27,17 +27,32 @@ export async function processChatMessage(rawMessage)
     await sendText(from, "Sorry, I couldn't find your language preference. Please try restarting the conversation.");
     return;
   }
+  await sendText(from, "Thank you for your query. I am analyzing it now, please wait a moment...");
 
-  // 2. Translate their message to English
-  const userLang = user.native_language;
-  const targetLang = 'eng_Latn'; 
-  const englishMessage = await translateText(userMessage, userLang, targetLang);
+  try 
+  {
+    const userLang = user.native_language; // e.g., 'hin_Deva'
+    const englishLang = 'eng_Latn';
 
-  // 3. For testing: Log the result and confirm with the user
-  console.log(`[User: ${from}] Native (${userLang}): "${userMessage}" -> English (${targetLang}): "${englishMessage}"`);
+    // --- Step 1: Translate User's Message to English ---
+    const englishMessage = await translateText(userMessage, userLang, englishLang);
+    console.log(`[User: ${from}] Translated Query (EN): "${englishMessage}"`);
 
-  // Send a confirmation back to the user to verify the translation worked.
-  // In the next step, we will replace this with the call to Perplexity.
-  const confirmationText = `(For Testing) I understood your message as: "${englishMessage}"`;
-  await sendText(from, confirmationText);
+    // --- Step 2: Get Analysis from Perplexity ---
+    // Pass the English query and the full user profile for context
+    const englishAnalysis = await getPerplexityAnalysis(englishMessage, user);
+    console.log(`[User: ${from}] Perplexity Analysis (EN):\n${englishAnalysis}`);
+
+    // --- Step 3: Translate the Analysis Back to User's Native Language ---
+    const nativeLanguageAnalysis = await translateText(englishAnalysis, englishLang, userLang);
+    console.log(`[User: ${from}] Final Translated Response (${userLang}):\n${nativeLanguageAnalysis}`);
+
+    // --- Step 4: Send the Final Response and Log ---
+    await sendText(from, nativeLanguageAnalysis);
+    await saveChatLog(user.id, userMessage, nativeLanguageAnalysis);
+
+  } catch (error) {
+    console.error(`[${from}] Error in chat processing pipeline:`, error);
+    await sendText(from, "Sorry, an unexpected error occurred. Please try asking your question again.");
+  }
 }
