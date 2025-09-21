@@ -14,7 +14,6 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID; 
 
-// Webhook verification
 app.get("/webhook", (req, res) => 
 {
         const mode = req.query["hub.mode"];
@@ -32,8 +31,6 @@ app.get("/webhook", (req, res) =>
         }
 });
 
-
-// POST /webhook - receives messages
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body
@@ -41,9 +38,8 @@ app.post('/webhook', async (req, res) => {
     const change = entry?.changes?.[0]
     const value = change?.value
     const messages = value?.messages
-    if (messages && messages.length > 0) {
+    if (messages && messages.length > 0){
       const msg = messages[0]
-      // forward the raw message object for processing
       await processOnboardingMessage(msg)
     }
   } catch (e) {

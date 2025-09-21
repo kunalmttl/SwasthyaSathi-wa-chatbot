@@ -1,7 +1,7 @@
 // chat.js
 import { getUserByPhone } from './db.js';
 import { translateText } from './services.js';
-import { sendText } from './onboarding.js'; // Reusing the generic text sender
+import { sendText } from './onboarding.js'; 
 
 
 /**
