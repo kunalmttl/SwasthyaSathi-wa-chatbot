@@ -341,7 +341,8 @@ async function handleLocationReply(user, from, latitude, longitude)
 
 
 // Button handler
-async function handleButtonReply(user, from, btnId, rawMessage) {
+async function handleButtonReply(user, from, btnId, rawMessage) 
+{
   switch (btnId) {
     case 'start_setup':
       // This is the entry point for the onboarding flow.
