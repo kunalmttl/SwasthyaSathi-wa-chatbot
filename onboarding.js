@@ -473,3 +473,62 @@ async function handleTextReply(user, from, text) {
   // fallback
   await sendText(from, 'Thanks. Proceeding to the next step.')
 }
+
+
+/**
+ * Sends a formatted, interactive list of vaccination centers to a user.
+ * @param {string} to - The recipient's phone number.
+ * @param {object} sessionData - The processed data object with pincode, district, and centers.
+ */
+export async function sendVaccinationList(to, sessionData) {
+  const centers = sessionData.centers.slice(0, 10);
+
+  if (centers.length === 0) {
+    return;
+  }
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: {
+        type: 'text',
+        text: `💉 Vaccination Drives`
+      },
+      body: {
+        text: `Here are vaccination drives available in your area (Pincode: ${sessionData.pincode}).`
+      },
+      footer: {
+        text: 'Please contact the center for more details.'
+      },
+      action: {
+        button: 'Choose a Centre',
+        sections: [
+          {
+            title: `${sessionData.district}, ${sessionData.state}`,
+            rows: centers.map((center, index) => ({
+              id: `vaccine_center_${index + 1}`,
+              
+              // --- THE FIX IS HERE ---
+              // Title (Max 24 chars): Keep it short and clear.
+              title: center.name.substring(0, 24), 
+              
+              // Description (Max 72 chars): Focus on the most important info.
+              // We will prioritize showing the address and timing.
+              description: `📍 ${center.address} | 🕒 ${center.timing}`.substring(0, 72)
+            }))
+          }
+        ]
+      }
+    }
+  };
+
+  try {
+    console.log(`Sending vaccination list to ${to}`);
+    return await axios.post(GRAPH_BASE, payload, { headers: headers() });
+  } catch (e) {
+    console.error('sendVaccinationList error', e?.response?.data || e.message);
+  }
+}

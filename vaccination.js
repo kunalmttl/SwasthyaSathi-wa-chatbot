@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
-import fetch from "node-fetch"; // Ensure you have 'node-fetch' installed (npm install node-fetch)
+import fetch from "node-fetch";
+// Import our new WhatsApp message sender
+import { sendVaccinationList } from "./onboarding.js";
 
 // --- Configuration and Supabase Client ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -10,54 +12,54 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const VACCINATION_API_TEMPLATE = "https://cdn-api.co-vin.in/api/v5/appointment/sessions/public/calendarByPin?pincode={pincode}&date={date}";
 
 /**
- * Fetches a list of unique, valid pincodes from the users table.
- * @returns {Promise<string[]>} An array of unique pincode strings.
+ * A helper function to pause execution. Crucial for not getting blocked by WhatsApp.
+ * @param {number} ms - Milliseconds to wait.
  */
-async function getUniqueUserPincodes() {
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Fetches all users who have a pincode and groups them by that pincode.
+ * @returns {Promise<Map<string, object[]>>} A Map where keys are pincodes and values are arrays of user objects.
+ */
+async function getUsersGroupedByPincode() {
   const { data, error } = await supabase
     .from("users")
-    .select("pincode");
+    .select("phone_number, pincode")
+    .not("pincode", "is", null); // Only fetch users who have a pincode
 
   if (error) {
     console.error("Error fetching user data:", error.message);
-    return [];
+    return new Map();
   }
 
-  // Filter out null/undefined pincodes, get unique values using a Set, and convert back to an array.
-  const uniquePincodes = [...new Set(data.map(user => user.pincode).filter(Boolean))];
-  return uniquePincodes;
+  // Group users by their pincode
+  const usersByPincode = new Map();
+  for (const user of data) {
+    if (!usersByPincode.has(user.pincode)) {
+      usersByPincode.set(user.pincode, []);
+    }
+    usersByPincode.get(user.pincode).push(user);
+  }
+  return usersByPincode;
 }
 
 /**
- * Fetches vaccination session data for a given pincode and date from the public API.
- * @param {string} pincode - The 6-digit pincode to search for.
+ * Fetches vaccination session data for a given pincode and date.
+ * (This function is the same as before, just kept for modularity)
+ * @param {string} pincode - The 6-digit pincode.
  * @param {string} date - The date in DD-MM-YYYY format.
- * @returns {Promise<object|null>} A structured object with session data or null on failure/no data.
+ * @returns {Promise<object|null>} A structured object with session data or null.
  */
 async function fetchVaccinationSessions(pincode, date) {
-  const apiUrl = VACCINATION_API_TEMPLATE
-    .replace("{pincode}", pincode)
-    .replace("{date}", date);
-
+  const apiUrl = VACCINATION_API_TEMPLATE.replace("{pincode}", pincode).replace("{date}", date);
   try {
-    const response = await fetch(apiUrl, {
-      headers: { 'User-Agent': 'SwasthyaSathiApp/1.0' } // It's good practice to set a User-Agent
-    });
-
-    if (!response.ok) {
-      throw new Error(`API responded with status ${response.status}: ${response.statusText}`);
-    }
-
+    const response = await fetch(apiUrl, { headers: { 'User-Agent': 'SwasthyaSathiApp/1.0' } });
+    if (!response.ok) throw new Error(`API responded with status ${response.status}`);
     const data = await response.json();
+    if (!data.centers || data.centers.length === 0) return null;
 
-    // If the API returns no centers, there's nothing to report.
-    if (!data.centers || data.centers.length === 0) {
-      return null;
-    }
-
-    // Process the data into a cleaner format
     const firstCenter = data.centers[0];
-    const processedData = {
+    return {
       pincode: firstCenter.pincode,
       state: firstCenter.state_name,
       district: firstCenter.district_name,
@@ -68,8 +70,6 @@ async function fetchVaccinationSessions(pincode, date) {
         purpose: center.sessions[0]?.uip_session_category || "General Vaccination",
       })),
     };
-
-    return processedData;
   } catch (err) {
     console.error(`Request failed for pincode ${pincode}:`, err.message);
     return null;
@@ -77,65 +77,43 @@ async function fetchVaccinationSessions(pincode, date) {
 }
 
 /**
- * Formats the vaccination session data into a readable string.
- * @param {object} sessionData - The processed data object from fetchVaccinationSessions.
- * @returns {string} A formatted message string ready for display.
+ * Main function to run the entire vaccination alert process.
  */
-function formatVaccinationMessage(sessionData) {
-  let message = `
-📍 Vaccination Drives for Pincode: ${sessionData.pincode}
-   State: ${sessionData.state}
-   District: ${sessionData.district}
+async function sendVaccinationAlerts() {
+  console.log("Starting vaccination alert process...");
 
-Centers Available:
---------------------`;
+  const date = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+  console.log(`Checking for drives on date: ${date}`);
 
-  sessionData.centers.forEach((center, index) => {
-    message += `
-  ${index + 1}. ${center.name}
-     Address: ${center.address}
-     Timing: ${center.timing}
-     Purpose: ${center.purpose}
-`;
-  });
-
-  return message;
-}
-
-/**
- * Main function to execute the vaccination drive check process.
- */
-async function runVaccinationCheck() {
-  console.log("Starting vaccination drive check...");
-
-  // Use the date from the command line argument, or default to today's date.
-  // Example usage: node vaccination.js 25-12-2025
-  const date = process.argv[2] || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-  console.log(`Checking for vaccination drives on date: ${date}`);
-
-  const uniquePincodes = await getUniqueUserPincodes();
-
-  if (uniquePincodes.length === 0) {
-    console.log("No valid pincodes found in the users table. Exiting.");
+  const usersByPincode = await getUsersGroupedByPincode();
+  if (usersByPincode.size === 0) {
+    console.log("No users with pincodes found. Exiting.");
     return;
   }
 
-  console.log(`Found users in ${uniquePincodes.length} unique pincode(s).`);
+  console.log(`Found users in ${usersByPincode.size} unique pincode(s).`);
 
-  // Loop through each unique pincode
-  for (const pincode of uniquePincodes) {
+  // Loop through each pincode that has users
+  for (const [pincode, users] of usersByPincode.entries()) {
+    console.log(`\n--- Checking pincode: ${pincode} (for ${users.length} user(s))`);
+    
     const sessionData = await fetchVaccinationSessions(pincode, date);
 
     if (sessionData) {
-      const message = formatVaccinationMessage(sessionData);
-      console.log(message);
+      console.log(`  Found ${sessionData.centers.length} centers. Preparing to notify users.`);
+      // If we found drives, notify every user in that pincode
+      for (const user of users) {
+        await sendVaccinationList(user.phone_number, sessionData);
+        // IMPORTANT: Wait 1 second between sending messages to avoid being rate-limited or blocked!
+        await delay(1000);
+      }
     } else {
-      console.log(`\n-> No vaccination data found for Pincode: ${pincode}`);
+      console.log(`  No vaccination data found for Pincode: ${pincode}`);
     }
   }
 
-  console.log("\nVaccination drive check finished.");
+  console.log("\nVaccination alert process finished.");
 }
 
 // --- Execute the Script ---
-runVaccinationCheck();
+sendVaccinationAlerts();
