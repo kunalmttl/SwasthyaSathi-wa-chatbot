@@ -1,113 +1,102 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+// Import our new WhatsApp message sender
+import { sendOutbreakList } from "./onboarding.js";
 
-// --- Supabase Client Initialization ---
+// --- Configuration and Supabase Client ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /**
- * Fetches a list of unique states from the users table.
- * @returns {Promise<string[]>} An array of unique state names.
+ * A helper function to pause execution. Crucial for not getting blocked by WhatsApp.
+ * @param {number} ms - Milliseconds to wait.
  */
-async function getUniqueUserStates() {
-  // Select only the 'state' column to minimize data transfer
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Fetches all users who have a state defined and groups them by that state.
+ * @returns {Promise<Map<string, object[]>>} A Map where keys are states and values are arrays of user objects.
+ */
+async function getUsersGroupedByState() {
   const { data, error } = await supabase
     .from("users")
-    .select("state");
+    .select("phone_number, state")
+    .not("state", "is", null); // Only fetch users who have a state
 
   if (error) {
     console.error("Error fetching user data:", error.message);
-    return []; // Return an empty array on error
+    return new Map();
   }
 
-  // Use a Set to automatically handle duplicates, then convert back to an array
-  const uniqueStates = [...new Set(data.map(user => user.state))];
-  return uniqueStates;
+  // Group users by their state
+  const usersByState = new Map();
+  for (const user of data) {
+    if (!usersByState.has(user.state)) {
+      usersByState.set(user.state, []);
+    }
+    usersByState.get(user.state).push(user);
+  }
+  return usersByState;
 }
 
 /**
- * Fetches all outbreak records for a specific state.
+ * Fetches all active outbreak records for a specific state.
  * @param {string} state - The state to query for outbreaks.
  * @returns {Promise<object[]|null>} An array of outbreak objects or null on error.
  */
-async function getOutbreaksByState(state) {
+async function fetchActiveOutbreaksByState(state) {
   const { data, error } = await supabase
     .from("public_outbreaks")
     .select("*")
-    .eq("state", state);
+    .eq("state", state)
+    .neq("status", "Ended"); // Only get ongoing outbreaks
 
   if (error) {
     console.error(`Error fetching outbreaks for ${state}:`, error.message);
-    return null; // Return null to indicate an error occurred
+    return null;
   }
-
   return data;
 }
 
 /**
- * Formats an array of outbreak objects into a readable string.
- * @param {string} state - The state where the outbreaks occurred.
- * @param {object[]} outbreaks - The array of outbreak records.
- * @returns {string} A formatted message string ready for display.
+ * Main function to run the entire outbreak alert process.
  */
-function formatOutbreakMessage(state, outbreaks) {
-  let message = `\n🚨 Outbreaks in ${state}:\n`;
+async function sendOutbreakAlerts() {
+  console.log("Starting outbreak alert process...");
 
-  outbreaks.forEach((outbreak, index) => {
-    message += `
-  ${index + 1}. Disease: ${outbreak.disease}
-     District: ${outbreak.district}
-     Cases: ${outbreak.cases}, Deaths: ${outbreak.deaths}
-     Start Date: ${outbreak.start_date}
-     Reported: ${outbreak.reporting_date}
-     Status: ${outbreak.status}
-     Comments: ${outbreak.comments || "N/A"}
-`;
-  });
-
-  return message;
-}
-
-/**
- * Main function to execute the outbreak check process.
- */
-async function runOutbreakCheck() {
-  console.log("Starting outbreak check...");
-
-  const uniqueStates = await getUniqueUserStates();
-
-  if (!uniqueStates.length) {
-    console.log("No states found in the users table. Exiting.");
+  const usersByState = await getUsersGroupedByState();
+  if (usersByState.size === 0) {
+    console.log("No users with state information found. Exiting.");
     return;
   }
 
-  console.log(`Found users in the following states: ${uniqueStates.join(', ')}`);
+  console.log(`Found users in ${usersByState.size} unique state(s).`);
 
-  // Loop through each unique state
-  for (const state of uniqueStates) {
-    console.log(`\n--- Checking for outbreaks in ${state}...`);
+  // Loop through each state that has users
+  for (const [state, users] of usersByState.entries()) {
+    console.log(`\n--- Checking state: ${state} (for ${users.length} user(s))`);
 
-    const outbreaks = await getOutbreaksByState(state);
+    const outbreaks = await fetchActiveOutbreaksByState(state);
 
-    // Handle cases where an error occurred or no outbreaks were found
-    if (!outbreaks) {
-      // Error message was already logged in the fetch function
-      continue; // Move to the next state
+    if (outbreaks && outbreaks.length > 0) {
+      console.log(`  Found ${outbreaks.length} active outbreak(s). Preparing to notify users.`);
+      
+      const outbreakData = { state, outbreaks };
+
+      // Notify every user in that state
+      for (const user of users) {
+        await sendOutbreakList(user.phone_number, outbreakData);
+        // IMPORTANT: Wait 1 second between sending messages to avoid being rate-limited!
+        await delay(1000);
+      }
+    } else {
+      console.log(`  No active outbreaks found for ${state}.`);
     }
-
-    if (outbreaks.length === 0) {
-      console.log(`No outbreaks found for ${state}.`);
-      continue; // Move to the next state
-    }
-
-    // If outbreaks are found, format and print the message
-    const message = formatOutbreakMessage(state, outbreaks);
-    console.log(message);
   }
 
-  console.log("\nOutbreak check finished.");
+  console.log("\nOutbreak alert process finished.");
 }
 
 // --- Execute the Script ---
-runOutbreakCheck();
+sendOutbreakAlerts();
