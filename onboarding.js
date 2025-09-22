@@ -10,7 +10,8 @@ const GRAPH_BASE = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages
 // ===================================================================
 // MULTI-LANGUAGE TRANSLATION SYSTEM
 // ===================================================================
-const translations = {
+const translations = 
+{
   en: {
     welcome: "Welcome to SwasthyaSathi! How would you like to start?",
     startSetup: "Start Setup",
@@ -36,7 +37,8 @@ const translations = {
     messageNotSupported: "Message type not supported for onboarding. Please reply with text.",
     gotIt: "Got it — please type or choose an option.",
     nextStep: "Thanks. Proceeding to the next step.",
-    selectionReceived: "Selection received."
+    selectionReceived: "Selection received.",
+    imageDescriptionPrompt: "Thanks for the picture. Please describe your symptoms or questions related to this picture for better analysis."
   },
   hi: {
     welcome: "SwasthyaSathi में आपका स्वागत है! आप कैसे शुरुआत करना चाहते हैं?",
@@ -545,7 +547,8 @@ export async function sendOutbreakList(to, outbreakData) {
 // ONBOARDING LOGIC AND HANDLERS
 // ===================================================================
 
-export async function processOnboardingMessage(rawMessage) {
+export async function processOnboardingMessage(rawMessage) 
+{
   const from = rawMessage.from;
   let user = await getUserByPhone(from);
 
@@ -555,12 +558,20 @@ export async function processOnboardingMessage(rawMessage) {
     return;
   }
 
+  const msgType = rawMessage.type;
+  if (msgType === 'image') 
+  {
+    // If a user sends an image, handle it with a dedicated function
+    await handleImageMessage(user, from, rawMessage.image);
+    return; // Stop further processing
+  }
+  
   if (user.onboarding_step === 'done' || user.verified) {
     await processChatMessage(rawMessage);
     return;
   }
+  
 
-  const msgType = rawMessage.type;
   try {
     if (msgType === 'interactive') {
       const interactive = rawMessage.interactive;
@@ -714,3 +725,30 @@ async function handleTextReply(user, from, text) {
   }
   await sendText(from, getTranslatedText(userLang, 'nextStep'));
 }
+
+
+
+/**
+ * Handles an incoming image message.
+ * It saves the media ID and prompts the user for a text description.
+ * @param {object} user - The user profile from the database.
+ * @param {string} from - The user's phone number.
+ * @param {object} imageObject - The image object from the webhook payload.
+ */
+async function handleImageMessage(user, from, imageObject) {
+  const mediaId = imageObject.id;
+  const userLang = user.native_language || 'en';
+
+  console.log(`Received image from ${from} with Media ID: ${mediaId}`);
+
+  // Save the media ID to the user's profile to indicate we are waiting for a description
+  await updateUserByPhone(from, { pending_media_id: mediaId });
+
+  // Prompt the user for more details
+  // TODO: Add this new key to your translations object
+  const promptText = getTranslatedText(userLang, 'imageDescriptionPrompt', "Thank you for the image. Please describe your symptoms or question related to this image.");
+  await sendText(from, promptText);
+}
+
+
+

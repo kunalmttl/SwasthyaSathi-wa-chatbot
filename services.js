@@ -50,7 +50,7 @@ const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
  * @param {object} userProfile The user's profile data from Supabase.
  * @returns {Promise<string>} The AI-generated analysis.
  */
-export async function getPerplexityAnalysis(userQuery, userProfile) 
+export async function getPerplexityAnalysis(userQuery, userProfile, imageBase64 = null) 
 {
   const API_URL = "https://api.perplexity.ai/chat/completions";
   const systemPrompt = `
@@ -79,18 +79,25 @@ export async function getPerplexityAnalysis(userQuery, userProfile)
     "Disclaimer: This is AI-generated advice and not a substitute for professional medical consultation. Please see a doctor for an accurate diagnosis."
     `;
 
+  const userMessageContent = [
+    { type: "text", text: userQuery }
+  ];
+
+  if (imageBase64) {
+    userMessageContent.push({
+      type: "image_url",
+      image_url: { url: imageBase64 }
+    });
+  }
+
+
+
   const payload = 
   {
     model: "sonar",
     messages: [
-      {
-        role: "system",
-        content: systemPrompt
-      },
-      {
-        role: "user",
-        content: userQuery 
-      }
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessageContent }
     ],
     max_tokens: 1024,
     temperature: 0.4 
@@ -157,4 +164,44 @@ export async function getAddressFromCoords(latitude, longitude)
   }
 }
 
+
+
+/**
+ * Downloads an image from WhatsApp's servers using a media ID and converts it to a Base64 string.
+ * @param {string} mediaId The media ID of the image.
+ * @returns {Promise<string|null>} A Base64 data URI (e.g., "data:image/jpeg;base64,...") or null on error.
+ */
+export async function getImageAsBase64(mediaId) {
+  try {
+    // Step 1: Get the temporary media URL from WhatsApp
+    const urlResponse = await axios.get(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
+    });
+
+    const mediaUrl = urlResponse.data.url;
+    const mimeType = urlResponse.data.mime_type;
+
+    if (!mediaUrl) {
+      throw new Error("Media URL not found in WhatsApp API response.");
+    }
+
+    // Step 2: Download the actual image data from the temporary URL
+    const imageResponse = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
+      responseType: 'arraybuffer' // Crucial for handling binary data
+    });
+
+    // Step 3: Convert the binary data to a Base64 string
+    const base64Image = Buffer.from(imageResponse.data, 'binary').toString('base64');
+
+    // Step 4: Format as a data URI
+    const dataUri = `data:${mimeType};base64,${base64Image}`;
+    console.log("Successfully converted image to Base64 data URI.");
+    return dataUri;
+
+  } catch (error) {
+    console.error("Error fetching or converting WhatsApp image:", error.response?.data || error.message);
+    return null;
+  }
+}
 

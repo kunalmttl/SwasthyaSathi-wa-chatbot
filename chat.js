@@ -1,7 +1,8 @@
 // chat.js
-import { getUserByPhone, saveChatLog, deleteUserByPhone } from './db.js';
+import { getUserByPhone, saveChatLog, deleteUserByPhone, updateUserByPhone } from './db.js';
 import { translateText, getPerplexityAnalysis } from './services.js';
 import { sendText } from './onboarding.js'; // Reusing the generic text sender
+import { getImageAsBase64 } from './services.js';
 
 
 /**
@@ -41,27 +42,56 @@ export async function processChatMessage(rawMessage)
     await sendText(from, "Sorry, I couldn't find your language preference. Please try restarting the conversation.");
     return;
   }
+
+  if (user.pending_media_id) {
+    const mediaId = user.pending_media_id;
+    console.log(`Processing text as description for pending Media ID: ${mediaId}`);
+
+    // Clear the pending state immediately to prevent race conditions
+    await updateUserByPhone(from, { pending_media_id: null });
+
+    // Download the image and get it as Base64
+    const imageBase64 = await getImageAsBase64(mediaId);
+    if (!imageBase64) {
+      await sendText(from, "Sorry, there was an error processing the image you sent. Please try sending it again.");
+      return;
+    }
+
+    // Now, run the full analysis pipeline with the image
+    await runAnalysisPipeline(user, userMessage, imageBase64);
+
+  } else {
+    // If no image is pending, run the normal text-only analysis
+    await runAnalysisPipeline(user, userMessage, null);
+  }
+}
+
+
+/**
+ * A new helper function to contain the analysis logic,
+ * making it reusable for both text-only and multimodal queries.
+ * @param {object} user
+ * @param {string} userMessage
+ * @param {string|null} imageBase64
+ */
+async function runAnalysisPipeline(user, userMessage, imageBase64) {
+  const from = user.phone_number;
   await sendText(from, "Thank you for your query. I am analyzing it now, please wait a moment...");
 
-  try 
-  {
-    const userLang = user.native_language; // e.g., 'hin_Deva'
+  try {
+    const userLang = user.native_language;
     const englishLang = 'en';
 
-    // --- Step 1: Translate User's Message to English ---
     const englishMessage = await translateText(userMessage, userLang, englishLang);
     console.log(`[User: ${from}] Translated Query (EN): "${englishMessage}"`);
 
-    // --- Step 2: Get Analysis from Perplexity ---
-    // Pass the English query and the full user profile for context
-    const englishAnalysis = await getPerplexityAnalysis(englishMessage, user);
+    // Pass the imageBase64 to the analysis function
+    const englishAnalysis = await getPerplexityAnalysis(englishMessage, user, imageBase64);
     console.log(`[User: ${from}] Perplexity Analysis (EN):\n${englishAnalysis}`);
 
-    // --- Step 3: Translate the Analysis Back to User's Native Language ---
     const nativeLanguageAnalysis = await translateText(englishAnalysis, englishLang, userLang);
     console.log(`[User: ${from}] Final Translated Response (${userLang}):\n${nativeLanguageAnalysis}`);
 
-    // --- Step 4: Send the Final Response and Log ---
     await sendText(from, nativeLanguageAnalysis);
     await saveChatLog(user.id, userMessage, nativeLanguageAnalysis);
 
