@@ -1,5 +1,5 @@
 // chat.js
-import { getUserByPhone, saveChatLog } from './db.js';
+import { getUserByPhone, saveChatLog, deleteUserByPhone } from './db.js';
 import { translateText, getPerplexityAnalysis } from './services.js';
 import { sendText } from './onboarding.js'; // Reusing the generic text sender
 
@@ -18,7 +18,21 @@ export async function processChatMessage(rawMessage)
     return;
   }
 
+    // Check for the reset command
+  if (userMessage.trim().toLowerCase() === 'reset profile') {
+    console.log(`Received reset command from ${from}. Deleting profile.`);
+    
+    const success = await deleteUserByPhone(from);
 
+    if (success) {
+      await sendText(from, "Your profile has been successfully deleted. Send any message to start the setup process again.");
+    } else {
+      await sendText(from, "Sorry, there was an error trying to delete your profile.");
+    }
+    return; // Stop the function here
+  }
+
+  
   // 1. Fetch the user's profile to get their native language
   const user = await getUserByPhone(from);
   if (!user || !user.native_language) 

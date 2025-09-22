@@ -59,8 +59,30 @@ export async function updateUserByPhone(phone, updates) {
 // Save chat log (useful)
 export async function saveChatLog(user_id, message_in, message_out) {
   const { data, error } = await supabase
-    .from('chat_logs')
+    .from('chat_history') // <-- This line refers to the table
     .insert([{ user_id, message_in, message_out }])
   if (error) console.error('saveChatLog error', error)
   return data
+}
+
+
+/**
+ * Deletes a user from the 'users' table.
+ * @param {string} phone The user's phone number.
+ * @returns {Promise<boolean>} True if deletion was successful, false otherwise.
+ */
+export async function deleteUserByPhone(phone) 
+{
+  const { error } = await supabase
+    .from('users')
+    .delete()
+    .eq('phone_number', phone);
+
+  if (error) {
+    console.error('deleteUserByPhone error', error);
+    return false;
+  }
+
+  console.log(`Successfully deleted user with phone number: ${phone}`);
+  return true;
 }
